@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 slim = tf.contrib.slim
-debug = True
+debug = False
 
 def conv2d(net, output_filters, kernel, stride, mode='REFLECT', relu=False):
     net = tf.pad(net, [[0, 0], [kernel / 2, kernel / 2], [kernel / 2, kernel / 2], [0, 0]], mode=mode)

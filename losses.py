@@ -8,6 +8,10 @@ import os,sys
 
 slim = tf.contrib.slim
 
+def gram(feature):
+  feature = tf.reshape(feature, tf.pack([-1, feature.get_shape()[3]]))
+  return tf.matmul(feature, feature, transpose_a=True) / tf.to_float(tf.size(feature))
+
 def get_style_features(FLAGS):
     """
     For the "style_image", the preprocessing step is:
@@ -30,9 +34,7 @@ def get_style_features(FLAGS):
       features = []
       for layer in FLAGS.style_layers:
           feature = endpoints_dict[layer]
-          feature = tf.reshape(feature, tf.pack([-1, feature.get_shape()[3]]))
-          feature = tf.matmul(feature, feature, transpose_a=True) / tf.to_float(tf.size(feature))
-          features.append(feature)
+          features.append(gram(feature))
 
       init_func = utils._get_init_fn(FLAGS)
       init_func(sess)

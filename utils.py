@@ -63,5 +63,5 @@ def read_conf_file(conf_file):
 
 
 if __name__ == '__main__':
-    f = read_conf_file('conf/mosaic.yml')
+    f = read_conf_file('conf/chritmas.yml')
     print(f.loss_model_file)
