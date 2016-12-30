@@ -16,6 +16,12 @@ A tensorflow implementation for [Perceptual Losses for Real-Time Style Transfer 
 | :---: | :----: |
 | ![](https://github.com/coder-james/fast-neural-style/blob/master/img/plane.jpg)|  ![](https://github.com/coder-james/fast-neural-style/blob/master/img/result/plane.jpg)  |
 
+---
+
+| colorful-noise | non-noise |
+| :---: | :----: |
+| ![](https://github.com/coder-james/fast-neural-style/blob/master/img/lbj_color_line.jpg)|  ![](https://github.com/coder-james/fast-neural-style/blob/master/img/result/lbj_color_line.jpg)  |
+
 ## Requirements and Prerequisites:
 - Python 2.7.x
 - Tensorflow
