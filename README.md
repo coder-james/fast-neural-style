@@ -7,6 +7,7 @@
 | style | result |
 | :---: | :----: |
 | ![](https://github.com/coder-james/fast-neural-style/blob/master/img/chritmas.jpg)|  ![](https://github.com/coder-james/fast-neural-style/blob/master/img/result/lbj.jpg)  |
+| ![](https://github.com/coder-james/fast-neural-style/blob/master/img/grid.jpg)|  ![](https://github.com/coder-james/fast-neural-style/blob/master/img/result/lbj_grid.jpg)  |
 
 ---
 
