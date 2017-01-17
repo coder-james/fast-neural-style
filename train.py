@@ -7,7 +7,8 @@ from __future__ import print_function
 import tensorflow as tf
 from nets import nets_factory
 from preprocessing import preprocessing_factory
-import transform_model
+from preprocessing.vgg_preprocessing import unprocess_image
+import transform_model,sr_model, al_model
 import time
 import losses
 import utils
@@ -18,7 +19,8 @@ slim = tf.contrib.slim
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--conf', default='conf/chritmas.yml', help='the path to the conf file')
+    parser.add_argument('-n', '--network', default='alipay', help="model network('style','super','color_line','alipay')")
+    parser.add_argument('-c', '--conf', default='conf/alipay.yml', help='the path to the conf file')
     return parser.parse_args()
 
 def main(FLAGS):
@@ -26,55 +28,72 @@ def main(FLAGS):
     if not(os.path.exists(training_path)):
         os.makedirs(training_path)
 
-    """precompute style feature"""
-    style_features_t = losses.get_style_features(FLAGS)
+    if FLAGS.network == "style":
+      """precompute style feature"""
+      style_features_t = losses.get_style_features(FLAGS)
 
     with tf.Graph().as_default():
-        with tf.Session() as sess:
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth=True
+        with tf.Session(config=config) as sess:
             """Build Network"""
             network_fn = nets_factory.get_network_fn(
-                FLAGS.loss_model,
-                num_classes=1,
-                is_training=False)
+                FLAGS.loss_model, 1)
 
-            image_preprocessing_fn, image_unprocessing_fn = preprocessing_factory.get_preprocessing(
+            image_preprocessing_fn = preprocessing_factory.get_preprocessing(
                 FLAGS.loss_model,
                 is_training=False)
 
-            processed_images = utils.batch_image(FLAGS.batch_size, FLAGS.image_size, FLAGS.image_size,
-                                            FLAGS.train_dir, image_preprocessing_fn, epochs=FLAGS.epoch)
+            input_images, content_images = utils.batch_image(FLAGS, image_preprocessing_fn)
+            tf.logging.info('Network Input Images size %s' % input_images.get_shape())
+            tf.logging.info('Content Images size %s' % content_images.get_shape())
 
-            generated = transform_model.net(processed_images, training=True)
+            if FLAGS.network == "style":
+              generated = transform_model.net(input_images, training=False)
+            elif FLAGS.network == "super":
+              generated = sr_model.net(input_images, scale=FLAGS.image_scale, training=False)
+	    elif FLAGS.network == "alipay" or FLAGS.network == "color_line":
+	      generated = al_model.net(input_images, training=False)
             processed_generated = [image_preprocessing_fn(image, FLAGS.image_size, FLAGS.image_size)
                                    for image in tf.unpack(generated, axis=0, num=FLAGS.batch_size)
                                    ]
+            
             processed_generated = tf.pack(processed_generated)
-            _, endpoints_dict = network_fn(tf.concat(0, [processed_generated, processed_images]), spatial_squeeze=False)
+            concat_input = tf.concat(0, [processed_generated, content_images])
+            _, endpoints_dict = network_fn(concat_input)
             for key in endpoints_dict:
                 tf.logging.info(key)
 
-            """Build Losses"""
-            content_loss = losses.content_loss(endpoints_dict, FLAGS.content_layers)
-            style_loss, style_loss_summary = losses.style_loss(endpoints_dict, style_features_t, FLAGS.style_layers)
-            tv_loss = losses.total_variation_loss(generated)  # use the unprocessed image
-
-            loss = FLAGS.style_weight * style_loss + FLAGS.content_weight * content_loss + FLAGS.tv_weight * tv_loss
-
-            """Add Summary"""
+            tf.summary.scalar('batch_size', FLAGS.batch_size)
+             
+            content_loss, content_loss_summary = losses.content_loss(endpoints_dict, FLAGS.content_layers, FLAGS.content_weights)
             tf.summary.scalar('losses/content_loss', content_loss)
-            tf.summary.scalar('losses/style_loss', style_loss)
-            tf.summary.scalar('losses/regularizer_loss', tv_loss)
-
+            for layer in FLAGS.content_layers:
+              tf.summary.scalar('losses/' + layer, content_loss_summary[layer])
             tf.summary.scalar('weighted_losses/weighted_content_loss', content_loss * FLAGS.content_weight)
-            tf.summary.scalar('weighted_losses/weighted_style_loss', style_loss * FLAGS.style_weight)
-            tf.summary.scalar('weighted_losses/weighted_regularizer_loss', tv_loss * FLAGS.tv_weight)
+            tv_loss = losses.total_variation_loss(generated) 
+            #tf.summary.scalar('losses/regularizer_loss', tv_loss)
+            #tf.summary.scalar('weighted_losses/weighted_regularizer_loss', tv_loss * FLAGS.tv_weight)
+
+            if FLAGS.network == "style":
+              style_loss, style_loss_summary = losses.style_loss(endpoints_dict, style_features_t, FLAGS.style_layers)
+              tf.summary.scalar('losses/style_loss', style_loss)
+              tf.summary.scalar('weighted_losses/weighted_style_loss', style_loss * FLAGS.style_weight)
+              loss = FLAGS.style_weight * style_loss + FLAGS.content_weight * content_loss + FLAGS.tv_weight * tv_loss
+              for layer in FLAGS.style_layers:
+                  tf.summary.scalar('style_losses/' + layer, style_loss_summary[layer])
+            elif FLAGS.network == "alipay":
+              pixel_loss = losses.pixel_loss(concat_input, FLAGS)
+              tf.summary.scalar('losses/pixel_loss', pixel_loss)
+              tf.summary.scalar('weighted_losses/weighted_pixel_loss', pixel_loss * FLAGS.pixel_weight)
+	      loss = FLAGS.content_weight * content_loss + FLAGS.pixel_weight * pixel_loss + FLAGS.tv_weight * tv_loss
+            else:
+	      loss = FLAGS.content_weight * content_loss + FLAGS.tv_weight * tv_loss
+
             tf.summary.scalar('total_loss', loss)
-            for layer in FLAGS.style_layers:
-                tf.summary.scalar('style_losses/' + layer, style_loss_summary[layer])
             tf.summary.image('generated', generated)
-            # tf.summary.image('processed_generated', processed_generated)  # May be better?
-            tf.summary.image('origin', tf.pack([
-                image_unprocessing_fn(image) for image in tf.unpack(processed_images, axis=0, num=FLAGS.batch_size)
+            tf.summary.image('input', tf.pack([
+                unprocess_image(image) for image in tf.unpack(input_images, axis=0, num=FLAGS.batch_size)
             ]))
             summary = tf.summary.merge_all()
             writer = tf.summary.FileWriter(training_path)
@@ -121,9 +140,9 @@ def main(FLAGS):
                         writer.flush()
                     """checkpoint"""
                     if step % 1000 == 0:
-                        saver.save(sess, os.path.join(training_path, 'fast-style-model.ckpt'), global_step=step)
+                        saver.save(sess, os.path.join(training_path, 'fast-%s-model.ckpt' % FLAGS.network), global_step=step)
             except tf.errors.OutOfRangeError:
-                saver.save(sess, os.path.join(training_path, 'fast-style-model.ckpt-done'))
+                saver.save(sess, os.path.join(training_path, 'fast-%s-model.ckpt-done' % FLAGS.network))
                 tf.logging.info('Done training -- epoch limit reached')
             finally:
                 coord.request_stop()
@@ -134,4 +153,5 @@ if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
     args = parse_args()
     FLAGS = utils.read_conf_file(args.conf)
+    FLAGS.network = args.network
     main(FLAGS)

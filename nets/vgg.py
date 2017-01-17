@@ -126,7 +126,7 @@ def vgg_16(inputs,
            num_classes=1000,
            is_training=True,
            dropout_keep_prob=0.5,
-           spatial_squeeze=True,
+           spatial_squeeze=False,
            scope='vgg_16'):
   """Oxford Net VGG 16-Layers version D Example.
 
@@ -175,7 +175,6 @@ def vgg_16(inputs,
       # Convert end_points_collection into a end_point dict.
       end_points = slim.utils.convert_collection_to_dict(end_points_collection)
       if spatial_squeeze:
-        print(net.get_shape())
         net = tf.squeeze(net, [1, 2], name='fc8/squeezed')
         end_points[sc.name + '/fc8'] = net
       return net, end_points

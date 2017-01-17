@@ -90,9 +90,9 @@ ENV/
 
 
 slim-official/
-train2014
+2014_COCO_train
 generated/
 models/
 tensorboard/
 pretrained/
-
+visual.py
